@@ -1,0 +1,45 @@
+# Build outputs
+*.exe
+*.out
+*.app
+*.dll
+*.so
+*.dylib
+*.lib
+*.a
+*.obj
+*.o
+*.pdb
+*.ilk
+*.log
+
+# Visual Studio / C++ build folders
+Debug/
+Release/
+x64/
+x86/
+bin/
+obj/
+
+# VS Code settings
+.vscode/
+*.code-workspace
+
+# User-specific IDE files
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.VC.db
+*.VC.VC.opendb
+
+# CMake / generated files
+CMakeFiles/
+cmake-build-*/
+Makefile
+CMakeCache.txt
+CTestTestfile.cmake
+
+# Temporary and OS files
+Thumbs.db
+.DS_Store

@@ -2,6 +2,7 @@
 #include <string>
 #include <ctime>
 #include <iomanip>
+#include "utilities.h"
 
 using namespace std;
 
@@ -171,17 +172,24 @@ public:
 };
 
 int main() {
+
+    // Enabling Virtual Terminal Proccessing
+    sys::EnableVirtualTerminalProcessing();
+
+
     string name, message;
     int year, month, day, hour, minute;
 
+    cout << color::b_yellow;
     cout << "====================================\n";
     cout << "       CREATE DIGITAL CAPSULE\n";
     cout << "====================================\n";
+    cout << color::reset;
 
-    cout << "\nEnter your name: ";
+    sys::type_write("\nEnter your name: ");
     getline(cin, name);
 
-    cout << "Enter your message: ";
+    sys::type_write("Enter your message: ");
     getline(cin, message);
 
     cout << "\nEnter unlock date and time\n";
@@ -198,8 +206,10 @@ int main() {
 
     DateTime unlockDate(year, month, day, hour, minute);
 
+    sys::playspinner(3, "Checking the Specifications");
+
     if (!unlockDate.isValid()) {
-        cout << "\nERROR: Invalid date or time!\n";
+        cout << color::red << "\nERROR: Invalid date or time!\n" << color::reset;
         return 0;
     }
 
@@ -210,8 +220,12 @@ int main() {
 
     capsule.checkAndUnlock();
 
-    cout << "\n\nCapsule created successfully!\n";
+    cout << "\n" << color::green << style::bold << style::blink;
+    design::draw_header("CAPSULE CREATED SUCCESSFULLY!", "=");
+    cout << "\n\n" << color::reset;
     capsule.displayCapsule();
+
+    sys::pause();
 
     return 0;
 }
