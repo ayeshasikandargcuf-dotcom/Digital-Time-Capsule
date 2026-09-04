@@ -1,0 +1,443 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <iomanip>
+#include <ctime>
+#include <algorithm>
+#include <functional>
+#include <limits>
+using namespace std;
+// DIGITAL TIME CAPSULE - Master Key + Export/Import + Backup/Restore
+// Educational project. XOR + std::hash is NOT real-world secure encryption.
+class Encryption {
+    static string deriveKey(const string& masterKey) {
+        size_t h = hash<string>{}(masterKey);
+        string key;
+        for (int i=0;i<32;i++) {
+            h^=(h<<13);
+            h^=(h>>7);
+            h^=(h<<17);
+            key += char((h>>((i%8)*8))&0xFF);
+        }
+        return key;
+    }
+    static string xorProcess(const string& data,const string& key) {
+        string r=data;
+        for (size_t i=0;i<data.size();i++) r[i]=data[i]^key[i%key.size()];
+        return r;
+    }
+    static string toHex(const string& data) {
+        const char* h="0123456789ABCDEF";
+        string r;
+        for (unsigned char c:data) {
+            r+=h[c>>4];
+            r+=h[c&15];
+        } return r;
+    }
+    static int hv(char c) {
+        if (c>='0'&&c<='9')return c-'0';
+        if (c>='A'&&c<='F')return c-'A'+10;
+        if (c>='a'&&c<='f')return c-'a'+10;
+        return -1;
+    }
+    static bool fromHex(const string& s,string& out) {
+        if (s.size()%2)return false;
+        out.clear();
+        for (size_t i=0;i<s.size();i+=2) {
+            int a=hv(s[i]),b=hv(s[i+1]);
+            if (a<0||b<0)return false;
+            out+=char((a<<4)|b);
+        }return true;
+    }
+    public:
+    static string encrypt(const string& text,const string& key) {
+        if (key.empty())return "";
+        return toHex(xorProcess(text,deriveKey(key)));
+    }
+    static bool decrypt(const string& text,const string& key,string& plain) {
+        if (key.empty())return false;
+        string bytes;
+        if (!fromHex(text,bytes))return false;
+        plain=xorProcess(bytes,deriveKey(key));
+        return true;
+    }
+    static string verifier(const string& key) {
+        return to_string(hash<string>{}(key));
+    }
+};
+class DateTime {
+    int year=0,month=0,day=0,hour=0,minute=0;
+    public:
+    DateTime()=default;
+    DateTime(int y,int m,int d,int h,int min):year(y),month(m),day(d),hour(h),minute(min) {
+    }
+    static bool leap(int y) {
+        return y%400==0||(y%4==0&&y%100!=0);
+    }
+    static int days(int y,int m) {
+        if (m==2)return leap(y)?29:28;
+        if (m==4||m==6||m==9||m==11)return 30;
+        return 31;
+    }
+    bool isValid()const {
+        return year>=1970&&month>=1&&month<=12&&day>=1&&hour>=0&&hour<=23&&minute>=0&&minute<=59&&day<=days(year,month);
+    }
+    time_t toTimeT()const {
+        tm t{};
+        t.tm_year=year-1900;
+        t.tm_mon=month-1;
+        t.tm_mday=day;
+        t.tm_hour=hour;
+        t.tm_min=minute;
+        t.tm_isdst=-1;
+        return mktime(&t);
+    }
+    static DateTime fromTimeT(time_t v) {
+        tm* t=localtime(&v);
+        if (!t)return {};;
+        return DateTime(t->tm_year+1900,t->tm_mon+1,t->tm_mday,t->tm_hour,t->tm_min);
+    }
+    static DateTime now() {
+        return fromTimeT(time(nullptr));
+    }
+    long long remaining()const {
+        return (long long)difftime(toTimeT(),time(nullptr));
+    }
+    string str()const {
+        stringstream s;
+        s<<setfill('0')<<setw(4)<<year<<'-'<<setw(2)<<month<<'-'<<setw(2)<<day<<' '<<setw(2)<<hour<<':'<<setw(2)<<minute;
+        return s.str();
+    }
+    int y()const {
+        return year;
+    } int m()const {
+        return month;
+    } int d()const {
+        return day;
+    } int h()const {
+        return hour;
+    } int min()const {
+        return minute;
+    }
+};
+class TimeCapsule {
+    int id=0;
+    string owner,title,category,encryptedMessage,keyVerifier;
+    DateTime created,unlock;
+    public:
+    TimeCapsule()=default;
+    TimeCapsule(int i,string o,string t,string c,string msg,DateTime cr,DateTime un,string key):id(i),owner(o),title(t),category(c),created(cr),unlock(un) {
+        encryptedMessage=Encryption::encrypt(msg,key);
+        keyVerifier=Encryption::verifier(key);
+    }
+    int getId()const {
+        return id;
+    } string getTitle()const {
+        return title;
+    } string getCategory()const {
+        return category;
+    } string getOwner()const {
+        return owner;
+    }
+    DateTime getUnlock()const {
+        return unlock;
+    }
+    bool ready()const {
+        return time(nullptr)>=unlock.toTimeT();
+    }
+    bool correctKey(const string& key)const {
+        return Encryption::verifier(key)==keyVerifier;
+    }
+    bool decrypt(const string& key,string& msg)const {
+        return ready()&&correctKey(key)&&Encryption::decrypt(encryptedMessage,key,msg);
+    }
+    void display()const {
+        cout<<"\n----------------------------------------\nCapsule ID : "<<id<<"\nTitle      : "<<title<<"\nCategory   : "<<category<<"\nCreated At : "<<created.str()<<"\nUnlock At  : "<<unlock.str()<<"\n";
+        long long r=unlock.remaining();
+        if (r<=0) cout<<"Status     : READY TO UNLOCK\n";
+        else {
+            long long dd=r/86400;
+            r%=86400;
+            long long hh=r/3600;
+            r%=3600;
+            long long mm=r/60,ss=r%60;
+            cout<<"Status     : LOCKED\nRemaining  : "<<dd<<" day(s), "<<hh<<" hour(s), "<<mm<<" minute(s), "<<ss<<" second(s)\n";
+        } cout<<"----------------------------------------\n";
+    }
+    void save(ofstream& out)const {
+        out<<id<<'\n'<<owner<<'\n'<<title<<'\n'<<category<<'\n'<<encryptedMessage<<'\n'<<keyVerifier<<'\n';
+        out<<created.y()<<' '<<created.m()<<' '<<created.d()<<' '<<created.h()<<' '<<created.min()<<'\n';
+        out<<unlock.y()<<' '<<unlock.m()<<' '<<unlock.d()<<' '<<unlock.h()<<' '<<unlock.min()<<'\n';
+    }
+    bool load(ifstream& in) {
+        string line;
+        if (!getline(in,line))return false;
+        id=stoi(line);
+        if (!getline(in,owner)||!getline(in,title)||!getline(in,category)||!getline(in,encryptedMessage)||!getline(in,keyVerifier))return false;
+        int y,m,d,h,mi;
+        if (!(in>>y>>m>>d>>h>>mi))return false;
+        created=DateTime(y,m,d,h,mi);
+        if (!(in>>y>>m>>d>>h>>mi))return false;
+        unlock=DateTime(y,m,d,h,mi);
+        in.ignore(numeric_limits<streamsize>::max(),'\n');
+        return true;
+    }
+};
+class CapsuleManager {
+    vector<TimeCapsule> capsules;
+    int nextID=1001;
+    const string dataFile="capsules.dat", backupFile="capsules_backup.dat";
+    public:
+    bool saveData()const {
+        ofstream out(dataFile);
+        if (!out) {
+            cout<<"\nError: Could not save data.\n";
+            return false;
+        }out<<capsules.size()<<'\n';
+        for (const auto& c:capsules)c.save(out);
+        return true;
+    }
+    bool loadData() {
+        ifstream in(dataFile);
+        if (!in)return false;
+        size_t n;
+        if (!(in>>n))return false;
+        in.ignore(numeric_limits<streamsize>::max(),'\n');
+        capsules.clear();
+        for (size_t i=0;i<n;i++) {
+            TimeCapsule c;
+            if (!c.load(in)) {
+                capsules.clear();
+                return false;
+            }capsules.push_back(c);
+            nextID=max(nextID,c.getId()+1);
+        }return true;
+    }
+    bool backup()const {
+        ifstream src(dataFile,ios::binary);
+        if (!src) {
+            cout<<"\nNo capsules.dat found. Create at least one capsule first.\n";
+            return false;
+        }ofstream dst(backupFile,ios::binary);
+        if (!dst) {
+            cout<<"\nCould not create backup.\n";
+            return false;
+        }dst<<src.rdbuf();
+        cout<<"\nBackup created successfully: "<<backupFile<<"\n";
+        return true;
+    }
+    bool restore() {
+        ifstream src(backupFile,ios::binary);
+        if (!src) {
+            cout<<"\nNo backup file found.\n";
+            return false;
+        }ofstream dst(dataFile,ios::binary);
+        if (!dst) {
+            cout<<"\nCould not restore backup.\n";
+            return false;
+        }dst<<src.rdbuf();
+        if (!loadData()) {
+            cout<<"\nBackup appears invalid.\n";
+            return false;
+        }cout<<"\nBackup restored successfully.\n";
+        return true;
+    }
+    void create(const string& key) {
+        string owner,title,cat,msg;
+        cout<<"\n========== CREATE NEW CAPSULE ==========\nName: ";
+        getline(cin,owner);
+        cout<<"Title: ";
+        getline(cin,title);
+        cout<<"Category: ";
+        getline(cin,cat);
+        cout<<"Message: ";
+        getline(cin,msg);
+        if (title.empty()||msg.empty()) {
+            cout<<"\nTitle and message cannot be empty.\n";
+            return;
+        }int y,m,d,h,mi;
+        cout<<"Unlock Year: ";
+        cin>>y;
+        cout<<"Month: ";
+        cin>>m;
+        cout<<"Day: ";
+        cin>>d;
+        cout<<"Hour (0-23): ";
+        cin>>h;
+        cout<<"Minute (0-59): ";
+        cin>>mi;
+        cin.ignore(numeric_limits<streamsize>::max(),'\n');
+        DateTime un(y,m,d,h,mi);
+        if (!un.isValid()) {
+            cout<<"\nInvalid date/time.\n";
+            return;
+        }if (un.toTimeT()<=time(nullptr)) {
+            cout<<"\nUnlock time must be in the future.\n";
+            return;
+        }TimeCapsule c(nextID++,owner,title,cat,msg,DateTime::now(),un,key);
+        capsules.push_back(c);
+        saveData();
+        cout<<"\nCapsule created! ID: "<<c.getId()<<"\n";
+    }
+    void view()const {
+        cout<<"\n========== MY CAPSULES ==========\n";
+        if (capsules.empty()) {
+            cout<<"No capsules found.\n";
+            return;
+        }for (const auto& c:capsules)c.display();
+    }
+    void search()const {
+        string k;
+        cout<<"\nSearch title/category/owner: ";
+        getline(cin,k);
+        bool found=false;
+        for (const auto& c:capsules)if (c.getTitle().find(k)!=string::npos||c.getCategory().find(k)!=string::npos||c.getOwner().find(k)!=string::npos) {
+            c.display();
+            found=true;
+        }if (!found)cout<<"\nNo matching capsule found.\n";
+    }
+    void unlock(const string& key)const {
+        int id;
+        cout<<"\nEnter Capsule ID: ";
+        cin>>id;
+        cin.ignore(numeric_limits<streamsize>::max(),'\n');
+        for (const auto& c:capsules)if (c.getId()==id) {
+            if (!c.ready()) {
+                cout<<"\nCapsule is still locked. Unlock At: "<<c.getUnlock().str()<<"\n";
+                return;
+            }if (!c.correctKey(key)) {
+                cout<<"\nERROR: Incorrect Master Key. Message remains protected.\n";
+                return;
+            }string msg;
+            if (!c.decrypt(key,msg)) {
+                cout<<"\nCould not decrypt capsule.\n";
+                return;
+            }cout<<"\n========== CAPSULE UNLOCKED ==========\nTitle: "<<c.getTitle()<<"\nMessage: "<<msg<<"\n=======================================\n";
+            return;
+        }cout<<"\nCapsule ID not found.\n";
+    }
+    void exportOne()const {
+        int id;
+        cout<<"\nEnter Capsule ID to export: ";
+        cin>>id;
+        cin.ignore(numeric_limits<streamsize>::max(),'\n');
+        for (const auto& c:capsules)if (c.getId()==id) {
+            string f="capsule_"+to_string(id)+".dat";
+            ofstream out(f);
+            if (!out) {
+                cout<<"\nExport failed.\n";
+                return;
+            }out<<1<<'\n';
+            c.save(out);
+            cout<<"\nExported successfully: "<<f<<"\n";
+            return;
+        }cout<<"\nCapsule ID not found.\n";
+    }
+    void importOne() {
+        string f;
+        cout<<"\nEnter exported filename: ";
+        getline(cin,f);
+        ifstream in(f);
+        if (!in) {
+            cout<<"\nFile could not be opened.\n";
+            return;
+        }size_t n;
+        if (!(in>>n)||n!=1) {
+            cout<<"\nInvalid exported capsule.\n";
+            return;
+        }in.ignore(numeric_limits<streamsize>::max(),'\n');
+        TimeCapsule c;
+        if (!c.load(in)) {
+            cout<<"\nCould not read capsule.\n";
+            return;
+        }for (const auto& x:capsules)if (x.getId()==c.getId()) {
+            cout<<"\nThis Capsule ID already exists.\n";
+            return;
+        }capsules.push_back(c);
+        nextID=max(nextID,c.getId()+1);
+        saveData();
+        cout<<"\nCapsule imported successfully! ID: "<<c.getId()<<"\n";
+    }
+    void remove() {
+        int id;
+        cout<<"\nEnter Capsule ID to delete: ";
+        cin>>id;
+        cin.ignore(numeric_limits<streamsize>::max(),'\n');
+        auto old=capsules.size();
+        capsules.erase(remove_if (capsules.begin(),capsules.end(),[&](const TimeCapsule& c) {
+            return c.getId()==id;
+        }),capsules.end());
+        if (old==capsules.size()) {
+            cout<<"\nCapsule ID not found.\n";
+            return;
+        }saveData();
+        cout<<"\nCapsule deleted successfully.\n";
+    }
+    void tests()const {
+        int p=0,t=0;
+        auto test=[&](string n,bool ok) {
+            ++t;
+            cout<<(ok?"[PASS] ":"[FAIL] ")<<n<<'\n';
+            if (ok)++p;
+        };
+        string plain="Hello Future!",enc=Encryption::encrypt(plain,"TestKey"),dec;
+        test("Encryption/Decryption",Encryption::decrypt(enc,"TestKey",dec)&&dec==plain);
+        test("Wrong Key Detection",Encryption::verifier("A")!=Encryption::verifier("B"));
+        test("Valid Date",DateTime(2030,12,25,10,30).isValid());
+        test("Invalid Date",!DateTime(2030,2,30,10,30).isValid());
+        cout<<"\nTests Passed: "<<p<<"/"<<t<<"\n";
+    }
+};
+void menu() {
+    cout<<"\n============================================\nDIGITAL TIME CAPSULE\n============================================\n1. Create New Capsule\n2. View My Capsules\n3. Search Capsule\n4. Unlock Capsule\n5. Export Capsule\n6. Import Capsule\n7. Delete Capsule\n8. Create Backup\n9. Restore Backup\n10. Run Unit Tests\n11. Exit\n============================================\n";
+}
+int main() {
+    cout<<"============================================\n WELCOME TO DIGITAL TIME CAPSULE\n============================================\n";
+    string masterKey;
+    cout<<"\nEnter your Master Key: ";
+    getline(cin,masterKey);
+    if (masterKey.empty()) {
+        cout<<"\nMaster Key cannot be empty.\n";
+        return 0;
+    }CapsuleManager manager;
+    if (manager.loadData())cout<<"\nSaved capsule data loaded successfully.\n";
+    else cout<<"\nNo previous capsule data found.\n";
+    while (true) {
+        menu();
+        int ch;
+        cout<<"Enter your choice: ";
+        if (!(cin>>ch)) {
+            cin.clear();
+            cin.ignore(numeric_limits<streamsize>::max(),'\n');
+            cout<<"\nInvalid input.\n";
+            continue;
+        }cin.ignore(numeric_limits<streamsize>::max(),'\n');
+        switch(ch) {
+            case 1:manager.create(masterKey);
+            break;
+            case 2:manager.view();
+            break;
+            case 3:manager.search();
+            break;
+            case 4:manager.unlock(masterKey);
+            break;
+            case 5:manager.exportOne();
+            break;
+            case 6:manager.importOne();
+            break;
+            case 7:manager.remove();
+            break;
+            case 8:manager.backup();
+            break;
+            case 9:manager.restore();
+            break;
+            case 10:manager.tests();
+            break;
+            case 11:cout<<"\nThank you for using Digital Time Capsule!\n";
+            return 0;
+            default:cout<<"\nInvalid choice. Select 1-11.\n";
+        }
+    }
+}
